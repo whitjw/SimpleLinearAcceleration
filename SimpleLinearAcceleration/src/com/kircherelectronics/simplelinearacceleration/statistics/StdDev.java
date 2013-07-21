@@ -1,7 +1,7 @@
-package com.kircherelectronics.simplelinearacceleration;
+package com.kircherelectronics.simplelinearacceleration.statistics;
 
 /*
- * Cardan Linear Acceleration
+ * Simple Linear Acceleration
  * Copyright (C) 2013, Kaleb Kircher - Boki Software, Kircher Engineering, LLC
  *
  * This program is free software: you can redistribute it and/or modify
@@ -22,6 +22,8 @@ import java.util.LinkedList;
 
 import org.apache.commons.math3.stat.StatUtils;
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
+
+import com.kircherelectronics.simplelinearacceleration.SimpleLinearAccelerationActivity;
 
 import android.util.Log;
 

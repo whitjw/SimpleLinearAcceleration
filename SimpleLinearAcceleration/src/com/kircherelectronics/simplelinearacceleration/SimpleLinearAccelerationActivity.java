@@ -10,6 +10,17 @@ import java.text.Format;
 import java.text.ParsePosition;
 import java.util.Calendar;
 import com.androidplot.xy.XYPlot;
+import com.kircherelectronics.simplelinearacceleration.dialog.SettingsDialog;
+import com.kircherelectronics.simplelinearacceleration.filter.LPFWikipedia;
+import com.kircherelectronics.simplelinearacceleration.filter.LowPassFilter;
+import com.kircherelectronics.simplelinearacceleration.filter.MeanFilter;
+import com.kircherelectronics.simplelinearacceleration.filter.SimpleLinearAcceleration;
+import com.kircherelectronics.simplelinearacceleration.gauge.GaugeAccelerationHolo;
+import com.kircherelectronics.simplelinearacceleration.gauge.GaugeRotationHolo;
+import com.kircherelectronics.simplelinearacceleration.plot.DynamicPlot;
+import com.kircherelectronics.simplelinearacceleration.plot.PlotColor;
+
+import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -19,6 +30,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -28,10 +40,12 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.Window;
 import android.view.View.OnTouchListener;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+
 
 /*
  * Simple Linear Acceleration
@@ -52,8 +66,7 @@ import android.widget.Toast;
  */
 
 /**
- * Implements an Activity that is intended to sequester gravity from linear acceleration on
- * accelerometer inputs and then graph the outputs.
+ * Implements an Activity that is intended to calculate the linear acceleration of the device.
  * 
  * @author Kaleb
  * @version %I%, %G%
@@ -61,7 +74,7 @@ import android.widget.Toast;
 public class SimpleLinearAccelerationActivity extends Activity implements
 		SensorEventListener, Runnable, OnTouchListener
 {
-	
+
 	// The size of the sample window that determines RMS Amplitude Noise
 	// (standard deviation)
 	private final static int SAMPLE_WINDOW = 50;
@@ -69,6 +82,7 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	// Indicate if the output should be logged to a .csv file
 	private boolean logData = false;
 
+	private boolean lpfAccelerationStaticAlpha = false;
 
 	// Decimal formats for the UI outputs
 	private DecimalFormat df;
@@ -85,18 +99,27 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	private float[] linearAcceleration = new float[3];
 	private float[] g = new float[3];
 
-
 	// The Acceleration Gauge
-	private GaugeRotationHolo gaugeAcceleration;
+	private GaugeRotationHolo gaugeAccelerationTilt;
 
 	// The LPF Gauge
-	private GaugeRotationHolo gaugeLinearAccel;
+	private GaugeRotationHolo gaugeLinearAccelTilt;
+
+	// The Acceleration Gauge
+	private GaugeAccelerationHolo gaugeAcceleration;
+
+	// The LPF Gauge
+	private GaugeAccelerationHolo gaugeLinearAcceleration;
 
 	// Handler for the UI plots so everything plots smoothly
 	private Handler handler;
 
 	// Icon to indicate logging is active
 	private ImageView iconLogger;
+
+	private float accelerationLPFAlpha;
+
+	private int accelerationMeanFilterWindow;
 
 	// The generation of the log output
 	private int generation = 0;
@@ -127,11 +150,17 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	// Low-Pass Filters
 	private SimpleLinearAcceleration simpleLinearAcceleration;
 
+	private LowPassFilter lpfAcceleration;
+
+	private MeanFilter meanFilterAcceleration;
+
 	// Plot colors
 	private PlotColor color;
 
 	// Sensor manager to access the accelerometer sensor
 	private SensorManager sensorManager;
+
+	private SettingsDialog settingsDialog;
 
 	// Acceleration plot titles
 	private String plotAccelXAxisTitle = "AX";
@@ -143,11 +172,6 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	private String plotLinearAccelYAxisTitle = "WY";
 	private String plotLinearAccelZAxisTitle = "WZ";
 
-	// LPF Android Developer plot tiltes
-	private String plotLPFAndDevXAxisTitle = "ADX";
-	private String plotLPFAndDevYAxisTitle = "ADY";
-	private String plotLPFAndDevZAxisTitle = "ADZ";
-
 	// Output log
 	private String log;
 
@@ -155,11 +179,6 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	private TextView xAxis;
 	private TextView yAxis;
 	private TextView zAxis;
-
-	// RMS Noise UI outputs
-	private TextView rmsAccel;
-	private TextView rmsLPFWiki;
-	private TextView rmsLPFAndDev;
 
 	/**
 	 * Get the sample window size for the standard deviation.
@@ -207,8 +226,11 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 		sensorManager = (SensorManager) this
 				.getSystemService(Context.SENSOR_SERVICE);
 
+		initFilters();
+
 		// Create the low-pass filters
-		simpleLinearAcceleration = new SimpleLinearAcceleration();
+		simpleLinearAcceleration = new SimpleLinearAcceleration(this,
+				lpfAcceleration, meanFilterAcceleration);
 
 		// Initialize the plots
 		initColor();
@@ -289,6 +311,16 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 		// Log the data
 		case R.id.menu_settings_logger_plotdata:
 			startDataLog();
+			return true;
+
+			// Log the data
+		case R.id.menu_settings_filter:
+			showSettingsDialog();
+			return true;
+
+			// Log the data
+		case R.id.menu_settings_help:
+			showHelpDialog();
 			return true;
 
 		default:
@@ -379,13 +411,26 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 				plotLinearAccelZAxisColor);
 	}
 
+	private void initFilters()
+	{
+		lpfAcceleration = new LPFWikipedia();
+		lpfAcceleration.setAlphaStatic(lpfAccelerationStaticAlpha);
+		lpfAcceleration.setAlpha(accelerationLPFAlpha);
+
+		meanFilterAcceleration = new MeanFilter();
+		meanFilterAcceleration.setWindowSize(accelerationMeanFilterWindow);
+	}
+
 	/**
 	 * Create the RMS Noise bar chart.
 	 */
 	private void initGauges()
 	{
-		gaugeAcceleration = (GaugeRotationHolo) findViewById(R.id.gauge_acceleration);
-		gaugeLinearAccel = (GaugeRotationHolo) findViewById(R.id.gauge_lpf);
+		gaugeAccelerationTilt = (GaugeRotationHolo) findViewById(R.id.gauge_acceleration_tilt);
+		gaugeLinearAccelTilt = (GaugeRotationHolo) findViewById(R.id.gauge_linear_acceleration_tilt);
+
+		gaugeAcceleration = (GaugeAccelerationHolo) findViewById(R.id.gauge_acceleration);
+		gaugeLinearAcceleration = (GaugeAccelerationHolo) findViewById(R.id.gauge_linear_acceleration);
 	}
 
 	/**
@@ -411,6 +456,36 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	private void removePlot(int key)
 	{
 		dynamicPlot.removeSeriesPlot(key);
+	}
+
+	private void showHelpDialog()
+	{
+		Dialog helpDialog = new Dialog(this);
+		helpDialog.setCancelable(true);
+		helpDialog.setCanceledOnTouchOutside(true);
+
+		helpDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+		helpDialog.setContentView(getLayoutInflater().inflate(R.layout.help,
+				null));
+
+		helpDialog.show();
+	}
+
+	/**
+	 * Show a settings dialog.
+	 */
+	private void showSettingsDialog()
+	{
+		if (settingsDialog == null)
+		{
+			settingsDialog = new SettingsDialog(this, simpleLinearAcceleration,
+					lpfAcceleration, meanFilterAcceleration);
+			settingsDialog.setCancelable(true);
+			settingsDialog.setCanceledOnTouchOutside(true);
+		}
+
+		settingsDialog.show();
 	}
 
 	/**
@@ -442,12 +517,6 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 
 			headers += this.plotLinearAccelZAxisTitle + ",";
 
-			headers += this.plotLPFAndDevXAxisTitle + ",";
-
-			headers += this.plotLPFAndDevYAxisTitle + ",";
-
-			headers += this.plotLPFAndDevZAxisTitle + ",";
-
 			log = headers + "\n";
 
 			iconLogger.setVisibility(View.VISIBLE);
@@ -468,10 +537,10 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	 */
 	private void plotData()
 	{
-		g[0] = acceleration[0]/SensorManager.GRAVITY_EARTH;
-		g[1] = acceleration[1]/SensorManager.GRAVITY_EARTH;
-		g[2] = acceleration[2]/SensorManager.GRAVITY_EARTH;
-		
+		g[0] = acceleration[0] / SensorManager.GRAVITY_EARTH;
+		g[1] = acceleration[1] / SensorManager.GRAVITY_EARTH;
+		g[2] = acceleration[2] / SensorManager.GRAVITY_EARTH;
+
 		dynamicPlot.setData(g[0], plotAccelXAxisKey);
 		dynamicPlot.setData(g[1], plotAccelYAxisKey);
 		dynamicPlot.setData(g[2], plotAccelZAxisKey);
@@ -487,8 +556,15 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 		yAxis.setText(df.format(g[1]));
 		zAxis.setText(df.format(g[2]));
 
-		gaugeAcceleration.updateRotation(g);
-		gaugeLinearAccel.updateRotation(linearAcceleration);
+		gaugeAccelerationTilt.updateRotation(g);
+		gaugeLinearAccelTilt.updateRotation(linearAcceleration);
+
+		gaugeAcceleration.updatePoint(acceleration[0], acceleration[1],
+				Color.parseColor("#33b5e5"));
+
+		gaugeLinearAcceleration.updatePoint(linearAcceleration[0]
+				* SensorManager.GRAVITY_EARTH, linearAcceleration[1]
+				* SensorManager.GRAVITY_EARTH, Color.parseColor("#33b5e5"));
 	}
 
 	/**
@@ -523,14 +599,14 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	private void writeLogToFile()
 	{
 		Calendar c = Calendar.getInstance();
-		String filename = "AccelerationFilter-" + c.get(Calendar.YEAR) + "-"
-				+ c.get(Calendar.DAY_OF_WEEK_IN_MONTH) + "-"
+		String filename = "SimpleLinearAcceleration-" + c.get(Calendar.YEAR)
+				+ "-" + c.get(Calendar.DAY_OF_WEEK_IN_MONTH) + "-"
 				+ c.get(Calendar.HOUR) + "-" + c.get(Calendar.HOUR) + "-"
 				+ c.get(Calendar.MINUTE) + "-" + c.get(Calendar.SECOND)
 				+ ".csv";
 
 		File dir = new File(Environment.getExternalStorageDirectory()
-				+ File.separator + "AccelerationFilter" + File.separator
+				+ File.separator + "LinearAcceleration" + File.separator
 				+ "Logs" + File.separator + "Acceleration");
 		if (!dir.exists())
 		{
@@ -592,47 +668,17 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 	 */
 	private void readPrefs()
 	{
-		SharedPreferences prefs = this.getSharedPreferences("lpf_prefs",
+
+		SharedPreferences prefs = this.getSharedPreferences("filter_prefs",
 				Activity.MODE_PRIVATE);
-	}
 
-	/**
-	 * A simple formatter to convert bar indexes into sensor names.
-	 */
-	private class NoiseIndexFormat extends Format
-	{
+		this.lpfAccelerationStaticAlpha = prefs.getBoolean(
+				"lpf_acceleration_static_alpha", false);
 
-		@Override
-		public StringBuffer format(Object obj, StringBuffer toAppendTo,
-				FieldPosition pos)
-		{
-			Number num = (Number) obj;
-
-			// using num.intValue() will floor the value, so we add 0.5 to round
-			// instead:
-			int roundNum = (int) (num.floatValue() + 0.5f);
-			switch (roundNum)
-			{
-			case 0:
-				toAppendTo.append("Accel");
-				break;
-			case 1:
-				toAppendTo.append("LPFWiki");
-				break;
-			case 2:
-				toAppendTo.append("LPFAndDev");
-				break;
-			default:
-				toAppendTo.append("Unknown");
-			}
-			return toAppendTo;
-		}
-
-		@Override
-		public Object parseObject(String string, ParsePosition position)
-		{
-			// TODO Auto-generated method stub
-			return null;
-		}
+		this.accelerationLPFAlpha = prefs.getFloat(
+				"lpf_acceleration_static_alpha_value", 0.4f);
+	
+		this.accelerationMeanFilterWindow = prefs.getInt(
+				"mean_filter_acceleration_window_value", 10);
 	}
 }

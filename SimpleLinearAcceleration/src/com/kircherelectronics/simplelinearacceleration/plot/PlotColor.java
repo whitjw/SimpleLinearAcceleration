@@ -1,9 +1,12 @@
-package com.kircherelectronics.simplelinearacceleration;
+package com.kircherelectronics.simplelinearacceleration.plot;
+
+import com.kircherelectronics.simplelinearacceleration.R;
+import com.kircherelectronics.simplelinearacceleration.R.color;
 
 import android.content.Context;
 
 /*
- * Cardan Linear Acceleration
+ * Simple Linear Acceleration
  * Copyright (C) 2013, Kaleb Kircher - Boki Software, Kircher Engineering, LLC
  *
  * This program is free software: you can redistribute it and/or modify

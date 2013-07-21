@@ -1,4 +1,4 @@
-package com.kircherelectronics.simplelinearacceleration;
+package com.kircherelectronics.simplelinearacceleration.gauge;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -16,7 +16,7 @@ import android.util.Log;
 import android.view.View;
 
 /*
- * Cardan Linear Acceleration
+ * Simple Linear Acceleration
  * Copyright (C) 2013, Kaleb Kircher - Boki Software, Kircher Engineering, LLC
  *
  * This program is free software: you can redistribute it and/or modify

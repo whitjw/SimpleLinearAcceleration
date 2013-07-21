@@ -1,4 +1,4 @@
-package com.kircherelectronics.simplelinearacceleration;
+package com.kircherelectronics.simplelinearacceleration.plot;
 
 import java.util.LinkedList;
 
@@ -12,7 +12,7 @@ import android.graphics.Paint;
 import android.util.SparseArray;
 
 /*
- * Cardan Linear Acceleration
+ * Simple Linear Acceleration
  * Copyright (C) 2013, Kaleb Kircher - Boki Software, Kircher Engineering, LLC
  *
  * This program is free software: you can redistribute it and/or modify

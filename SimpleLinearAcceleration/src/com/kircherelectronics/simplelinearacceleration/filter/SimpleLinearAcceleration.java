@@ -1,5 +1,10 @@
-package com.kircherelectronics.simplelinearacceleration;
+package com.kircherelectronics.simplelinearacceleration.filter;
 
+import com.kircherelectronics.simplelinearacceleration.statistics.StdDev;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.hardware.SensorManager;
 import android.util.Log;
 
@@ -22,9 +27,7 @@ import android.util.Log;
  */
 
 /**
- * An implementation of a accelerometer magnetometer sensor fusion. The
- * algorithm determines the linear acceleration of the device by using Cardan
- * angles.
+ * An implementation of linear acceleration from an acceleration sensor only.
  * 
  * @author Kaleb
  * @see http://en.wikipedia.org/wiki/Low-pass_filter
@@ -32,6 +35,10 @@ import android.util.Log;
  */
 public class SimpleLinearAcceleration
 {
+
+	private boolean lpfAccelerationActive = false;
+
+	private boolean meanFilterAccelerationActive = false;
 
 	// The gravity components of the acceleration signal.
 	private float[] components = new float[3];
@@ -42,6 +49,10 @@ public class SimpleLinearAcceleration
 	// Raw accelerometer data
 	private float[] acceleration = new float[]
 	{ 0, 0, 0 };
+
+	private LowPassFilter lpfAcceleration;
+
+	private MeanFilter meanFilterAcceleration;
 
 	// The rotation matrix R transforming a vector from the device
 	// coordinate system to the world's coordinate system which is
@@ -57,9 +68,19 @@ public class SimpleLinearAcceleration
 
 	private StdDev varianceAccel;
 
-	public SimpleLinearAcceleration()
+	private Context context;
+
+	public SimpleLinearAcceleration(Context context,
+			LowPassFilter lpfAcceleration, 
+			MeanFilter meanFilterAcceleration)
 	{
 		super();
+
+		this.context = context;
+		this.lpfAcceleration = lpfAcceleration;
+		this.meanFilterAcceleration = meanFilterAcceleration;
+
+		readPrefs();
 
 		// Create the RMS Noise calculations
 		varianceAccel = new StdDev();
@@ -77,6 +98,18 @@ public class SimpleLinearAcceleration
 		// Get a local copy of the sensor values
 		System.arraycopy(acceleration, 0, this.acceleration, 0,
 				acceleration.length);
+		
+		if (lpfAccelerationActive)
+		{
+			System.arraycopy(lpfAcceleration.addSamples(this.acceleration), 0,
+					this.acceleration, 0, this.acceleration.length);
+		}
+
+		if (meanFilterAccelerationActive)
+		{
+			this.acceleration = meanFilterAcceleration
+					.filterFloat(this.acceleration);
+		}
 
 		float magnitude = (float) (Math.sqrt(Math.pow(this.acceleration[0], 2)
 				+ Math.pow(this.acceleration[1], 2)
@@ -111,5 +144,31 @@ public class SimpleLinearAcceleration
 				/ SensorManager.GRAVITY_EARTH;
 
 		return linearAcceleration;
+	}
+
+	public void setLpfAccelerationActive(boolean lpfAccelerationActive)
+	{
+		this.lpfAccelerationActive = lpfAccelerationActive;
+	}
+
+	public void setMeanFilterAccelerationActive(
+			boolean meanFilterAccelerationActive)
+	{
+		this.meanFilterAccelerationActive = meanFilterAccelerationActive;
+	}
+
+	/**
+	 * Read in the current user preferences.
+	 */
+	private void readPrefs()
+	{
+		SharedPreferences prefs = this.context.getSharedPreferences(
+				"filter_prefs", Activity.MODE_PRIVATE);
+
+		this.lpfAccelerationActive = prefs
+				.getBoolean("lpf_acceleration", false);
+
+		this.meanFilterAccelerationActive = prefs.getBoolean(
+				"mean_filter_acceleration", false);
 	}
 }
