@@ -25,6 +25,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -644,9 +645,20 @@ public class SimpleLinearAccelerationActivity extends Activity implements
 		}
 		finally
 		{
-			this.sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED, Uri
-					.parse("file://"
-							+ Environment.getExternalStorageDirectory())));
+			// Update the MediaStore so we can view the file without rebooting.
+			// Note that it appears that the ACTION_MEDIA_MOUNTED approach is
+			// now blocked for non-system apps on Android 4.4.
+			MediaScannerConnection.scanFile(this, new String[]
+			{ "file://" + Environment.getExternalStorageDirectory() }, null,
+					new MediaScannerConnection.OnScanCompletedListener()
+					{
+						@Override
+						public void onScanCompleted(final String path,
+								final Uri uri)
+						{
+						
+						}
+					});
 		}
 	}
 
